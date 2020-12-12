@@ -1,0 +1,3 @@
+include ':voiceLibrary'
+include ':app'
+rootProject.name = "BrushCommonSDK"
