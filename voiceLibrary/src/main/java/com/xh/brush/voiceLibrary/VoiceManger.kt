@@ -6,8 +6,9 @@ import com.constraint.CoreProvideTypeEnum
 import com.constraint.OffLineSourceEnum
 import com.constraint.ResultBody
 import com.xs.SingEngine
-import com.xs.impl.AudioErrorCallback
 import com.xs.impl.ResultListener
+import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -23,16 +24,17 @@ class VoiceManger {
 
     companion object {
 
+        var mContext: Context? = null
         val TAG: String = javaClass.simpleName
 
-        lateinit var engine: SingEngine
+        private var engine: SingEngine? = null
 
         private var voiceEvent: VoiceEventCallBack? = null
 
         private var resultListener = object : ResultListener {
             override fun onReady() {
                 //1.引擎初始化成功回调
-                voiceEvent?.getEngineSuccess(VoiceManger())
+                voiceEvent?.getEngineSuccess(null)
             }
 
             override fun onBegin() {
@@ -81,6 +83,7 @@ class VoiceManger {
             override fun onResult(result: JSONObject?) {
                 //9.评测结果回调 - 返回评测结果，评测结果为JSON格式
                 Log.d(TAG, "onResult")
+                voiceEvent?.onResult(result)
             }
 
             /***
@@ -106,8 +109,9 @@ class VoiceManger {
 
         fun initEngine(mContext: Context) {
             try {
+                this.mContext = mContext
                 //获取引擎实例,设置测评监听对象
-                engine = SingEngine.newInstance(mContext)
+                val engine = SingEngine.newInstance(mContext)
                 engine.setListener(resultListener)
                 engine.setAudioErrorCallback { i -> voiceEvent?.onAudioError(i) }
                 engine.setServerAPI(VoiceConfig.SERVER_API)
@@ -128,6 +132,8 @@ class VoiceManger {
                 //设置引擎初始化参数
                 engine.setNewCfg(cfgInit)
                 engine.createEngine()
+                //引擎对象重新赋值
+                this.engine = engine
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -137,26 +143,94 @@ class VoiceManger {
             voiceEvent = voiceEventCallBack
         }
 
-        fun start() {
-            engine.start()
+        /***
+         * 录音测评
+         * @param path 存放录制的文件
+         * @param text 参考文本
+         * @param type 朗读类型
+         */
+        fun startEvaluate(path: String, text: String, vararg type: Int) {
+            if (engine == null) {
+                mContext?.let { initEngine(it) }
+            }
+            initConfig(path, text, *type)
+            engine?.start()
+        }
+
+        /***
+         * 本地文件测评
+         * @param path 已经生成的录制的文件
+         * @param text 参考文本
+         * @param type 朗读类型
+         */
+        fun startEvaluateWithPath(text: String, path: String, vararg type: Int) {
+            if (engine == null) {
+                mContext?.let { initEngine(it) }
+            }
+            initConfig(text, path, *type)
+            //开始测评
+            engine?.startWithPCM(path)
+        }
+
+        private fun initConfig(path: String, text: String, vararg type: Int) {
+            try {
+                if (path.isNotEmpty()) {
+                    engine?.wavPath = path
+                }
+                val request = JSONObject()
+                when (type[0]) {
+                    VoiceType.SENT -> {
+                        request.put("coreType", "en.sent.score")
+                        //评分参考文本
+                        request.put("refText", text)
+                    }
+                    VoiceType.PRED -> {
+                        request.put("coreType", "en.pred.score")
+                        request.put("refText", text)
+                    }
+                    VoiceType.PCHA -> {
+                        request.put("coreType", "en.pcha.score")
+                        val wordMulti = JSONArray()
+                        val reText: Array<String> =
+                            text.split(",").toTypedArray()
+                        for (word in reText) {
+                            val j = JSONObject()
+                            j.put("text", word)
+                            wordMulti.put(j)
+                        }
+                        request.put("lm", wordMulti)
+                    }
+                    VoiceType.WORD -> {
+                        request.put("coreType", "en.word.score")
+                        request.put("refText", text)
+                    }
+                }
+                request.put("rank", 100)
+                //构建评测请求参数
+                val startCfg = engine?.buildStartJson("guest", request)
+                startCfg?.put("enableRetry", 0)
+                //设置评测请求参数
+                engine?.setStartCfg(startCfg)
+            } catch (e: JSONException) {
+                e.printStackTrace()
+            }
         }
 
         fun stop() {
-            engine.stop()
+            engine?.stop()
         }
 
         fun delete() {
-            engine.delete()
+            engine?.delete()
             voiceEvent = null
         }
-
 
     }
 
 
     interface VoiceEventCallBack {
 
-        fun getEngineSuccess(voiceManger: VoiceManger)
+        fun getEngineSuccess(voiceManger: VoiceManger?)
 
         /***
          * 评测结果回调 - 返回评测结果，评测结果为JSON格式
@@ -174,3 +248,4 @@ class VoiceManger {
 
     }
 }
+

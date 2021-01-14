@@ -9,11 +9,16 @@ android {
     defaultConfig {
         applicationId "com.xh.brush.voice"
         minSdkVersion 16
-        targetSdkVersion 30
+        targetSdkVersion 22
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            //选择要添加的对应cpu类型的.so库。
+            abiFilters 'armeabi'
+            // 还可以添加 'x86', 'x86_64', 'mips', 'mips64'
+        }
     }
 
     buildTypes {
